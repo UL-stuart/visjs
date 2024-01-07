@@ -1,0 +1,229 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset='utf-8'>
+<title>A Simple HTML Example</title>
+<style>
+p {text-align:center;}
+</style>
+<script type="text/javascript" src="https://unpkg.com/vis-timeline@latest/standalone/umd/vis-timeline-graph2d.min.js"></script>
+<link href="https://unpkg.com/vis-timeline@latest/styles/vis-timeline-graph2d.min.css" rel="stylesheet" type="text/css" />
+<style type="text/css">
+#visualization {
+    display:block;
+    box-sizing: border-box;
+    width: 100%;
+}
+#messages {
+    display:block;
+    border: 1px solid green
+}
+</style>
+<script type="text/javascript" src="sessions.js"></script>
+<script type="text/javascript">
+
+function getSessionIds(sessions) {
+    return sessions.reduce((acc, cur) => {
+        if(!acc.includes(cur.session_id)) {
+            acc.push(cur.session_id);
+        }
+        return acc;
+    }, []).filter(s => {
+        return s != null;
+    });    
+}
+
+function restructureSessionData(ids, sessions) {
+    return ids.map(s => {
+        let sess = {
+            session_id: s
+        };
+        sessions.forEach(m => {
+            sess.messages = sess.messages || [];
+            if(m.session_id == sess.session_id) {
+                sess.level = m.level;
+                sess.messages.push({
+                    message: m.message,
+                    player: m.player,
+                    datetime: new Date(m.datetime)
+                });
+            };
+        });
+        return sess;
+    }); 
+}
+
+function setSession(sessionData, session_id) {
+    let s = session_id || 1419; // 1419 is the default session
+    return sessionData.filter(r => {
+        return r.session_id === s;
+    })[0]; 
+}
+
+function getPlayers(session) {
+    return new Set(session.messages.map(s => {
+        return s.player;
+    })); 
+}
+
+function setLevel(sessionData, level) {
+    level = level || 17;
+    return sessionData.filter(r => {
+        return r.level === level;
+    });
+}
+
+function getDuration(session) {
+    let times = session.messages.map(s => {
+        return s.datetime;
+    });
+    return (times[times.length - 1]).getTime() - (times[0]).getTime();  
+}
+
+function setGroups(players) {
+    return new vis.DataSet([...players].map(p => {
+            return {
+                content: p,
+                id: p,
+                className: p
+            }
+        })
+    ); 
+}
+
+function setMessageEndTimes(session) {
+    return session.messages.map((s, i) => {
+        let mess = {
+            id: i,
+            content: "",
+            title: s.message,
+            group: s.player,
+            start: s.datetime
+        }
+        mess.end = new Date(mess.start.getTime() + mess.title.length * 50);
+        return mess;
+    }); 
+}
+
+function setVisMessages(messages) {
+    return new vis.DataSet(messages);
+}
+
+let ids = getSessionIds(sessions);
+let sessionData = restructureSessionData(ids, sessions); 
+sessionData = setLevel(sessionData);
+let session = setSession(sessionData);
+let duration = getDuration(session);
+let players = getPlayers(session);
+
+</script>
+</head>
+<body>
+<select id="sessions"></select>
+<div id="visualization"></div>
+<div id="messages"></div>
+<script type="text/javascript">
+
+  let sessionSelector = document.getElementById('sessions');
+  let container = document.getElementById('visualization');
+
+  let groups = setGroups(players);
+  let m = setMessageEndTimes(session);
+  console.log(m);
+  var messages = setVisMessages(m);
+
+  // Configuration for the Timeline
+  var options = {
+    stack: false,
+    maxHeight: 640,
+    horizontalScroll: false,
+    verticalScroll: true,
+    type: 'range',
+    zoomMin: 10000,
+    zoomMax: duration,
+    zoomFriction: 100,
+    orientation: {
+        axis: "both",
+        item: "top"
+    },
+  };
+
+  // Create a Timeline
+  var gTimeline = new vis.Timeline(container, messages, groups, options);
+  gTimeline.on('select', function (properties) {
+    alert('selected items: ' + properties.items);
+  });
+
+  gTimeline.on('rangechanged', (event) => {
+    console.log(event);
+    let range = session.messages.filter(m => {
+        console.log(event.start.getTime());
+        return m.datetime.getTime() >= event.start.getTime() && m.datetime.getTime() < event.end.getTime(); 
+    }); 
+    renderMessages(range);
+    console.log(range);
+  });
+
+  function renderMessages(m) {
+    let container = document.getElementById('messages');
+    let lines = m.map(mess => {
+        return `<div><span class='time'>
+                    ${mess.datetime.getHours()}:${mess.datetime.getMinutes()}:${mess.datetime.getSeconds()}
+                    </span><span class='player'>${mess.player}</player>: <span class='message'>${mess.message}</span></div>`;
+    });
+    container.innerHTML = lines.join('');
+  }
+
+  function populateSelector(sessions) {
+    let sessionSelector = document.getElementById('sessions');
+    let sess = sessions.map(s => {
+        return `<option value='${s.session_id}'>session: ${s.session_id} level: ${s.level}</option>`
+    });
+    sessionSelector.innerHTML = sess.join('');
+    
+    sessionSelector.onchange = e => {
+        console.log(sessions);
+        let session = sessions.filter(r => {
+            return r.session_id == e.target.value;
+        })[0]; 
+        destroyTimeline();
+        createTimeline(session.session_id);  
+    };
+    return sessionSelector;
+  }
+
+  function destroyTimeline() {
+    gTimeline.destroy();
+    document.getElementById('messages').innerHTML = '';
+  }
+
+  function createTimeline(session_id) {
+        console.log(`hello ${session_id}`);
+        let session = setSession(sessionData, session_id);
+        let duration = getDuration(session);
+        let players = getPlayers(session);
+        let groups = setGroups(players);
+        let m = setMessageEndTimes(session);
+            console.log(m);
+        var messages = setVisMessages(m);
+        var timeline = new vis.Timeline(container, messages, groups, options);
+        gTimeline = timeline;
+        timeline.on('select', function (properties) {
+            alert('selected items: ' + properties.items);
+        });
+
+        timeline.on('rangechanged', (event) => {
+            console.log(event);
+            let range = session.messages.filter(m => {
+                console.log(event.start.getTime());
+                return m.datetime.getTime() >= event.start.getTime() && m.datetime.getTime() < event.end.getTime(); 
+            }); 
+            renderMessages(range);
+            console.log(range);
+        });
+  }
+
+  populateSelector(sessionData);
+</script>
+</body>
+</html>
