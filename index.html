@@ -9,6 +9,10 @@ p {text-align:center;}
 <script type="text/javascript" src="https://unpkg.com/vis-timeline@latest/standalone/umd/vis-timeline-graph2d.min.js"></script>
 <link href="https://unpkg.com/vis-timeline@latest/styles/vis-timeline-graph2d.min.css" rel="stylesheet" type="text/css" />
 <style type="text/css">
+body {
+    font-family: Poppins,Helvetica Neue,Helvetica,Arial,sans-serif;
+    padding:20px;
+}
 #visualization {
     display:block;
     box-sizing: border-box;
@@ -16,214 +20,340 @@ p {text-align:center;}
 }
 #messages {
     display:block;
-    border: 1px solid green
 }
+ul.slackMessages {
+    list-style-type: none;
+    margin:0;
+    padding:0;
+}
+.slackMessages .playerTime {
+    display:block;
+}
+.slackMessages li {
+    margin: 0;
+    padding:10px 0;
+}
+.slackMessages li .player {
+    font-weight: bold;
+}
+.slackMessages li .time {
+    font-size: 70%
+}
+.slackMessages li .message {
+    margin-left: 10px;
+}
+.slackMessages > li:nth-of-type(odd) {
+    background-color:#04053d17
+}
+.slackMessages > li:nth-of-type(even) {
+    background-color: #04053d0a
+}
+.vis-item {
+    background-color: #154eb3;
+    border-color: #154eb3;
+}
+.vis-text {
+    font-size: 80%;
+}
+.vis-item.star, .vis-item.hint, .vis-item.timer{
+    background-color: transparent !important;
+    border-color: transparent  !important; 
+    display: inline-block  !important;
+    line-height:0.5  !important;
+}
+.vis-item.star::before {
+  content: "⭐";
+  vertical-align: -5px;
+  line-height: 0;
+
+}
+.vis-item.hint::before {
+  content: "💡";
+  vertical-align: -5px;
+}
+.vis-item.timer::before {
+  content: "⏰";
+  vertical-align: -5px;
+}
+
+.UptimeLabs {
+    background-color:rgba(188, 194, 224, 0.15);
+
+}
+.playerSquare {
+    display:block;
+    height:10px;
+    width:10px;
+}
+
 </style>
-<script type="text/javascript" src="sessions.js"></script>
+<script type="text/javascript" src="session_restructured.js"></script>
 <script type="text/javascript">
 
-function getSessionIds(sessions) {
-    return sessions.reduce((acc, cur) => {
-        if(!acc.includes(cur.session_id)) {
-            acc.push(cur.session_id);
-        }
-        return acc;
-    }, []).filter(s => {
-        return s != null;
-    });    
+// Observer (Subscriber)
+class Observer {
+  update(data) {
+    // This method will be overridden by concrete observers
+  }
 }
 
-function restructureSessionData(ids, sessions) {
-    return ids.map(s => {
-        let sess = {
-            session_id: s
-        };
-        sessions.forEach(m => {
-            sess.messages = sess.messages || [];
-            if(m.session_id == sess.session_id) {
-                sess.level = m.level;
-                sess.messages.push({
-                    message: m.message,
-                    player: m.player,
-                    datetime: new Date(m.datetime)
-                });
-            };
-        });
-        return sess;
-    }); 
+// Subject (Publisher)
+class Subject {
+  constructor() {
+    this.observers = [];
+  }
+
+  addObserver(observer) {
+    this.observers.push(observer);
+  }
+
+  removeObserver(observer) {
+    this.observers = this.observers.filter(obs => obs !== observer);
+  }
+
+  notifyObservers(data) {
+    this.observers.forEach(observer => observer.update(data));
+  }
 }
 
-function setSession(sessionData, session_id) {
-    let s = session_id || 1419; // 1419 is the default session
-    return sessionData.filter(r => {
-        return r.session_id === s;
-    })[0]; 
-}
+class SessionAPI {
+    constructor(sessions) {
+        this.sessions = sessions;
+    }
+    get(id) {
+        let session = id ? this.sessions.filter(s => {
+            return s.session_id == id; 
+        })[0]: sessions[0];
 
-function getPlayers(session) {
-    return new Set(session.messages.map(s => {
-        return s.player;
-    })); 
-}
-
-function setLevel(sessionData, level) {
-    level = level || 17;
-    return sessionData.filter(r => {
-        return r.level === level;
-    });
-}
-
-function getDuration(session) {
-    let times = session.messages.map(s => {
-        return s.datetime;
-    });
-    return (times[times.length - 1]).getTime() - (times[0]).getTime();  
-}
-
-function setGroups(players) {
-    return new vis.DataSet([...players].map(p => {
-            return {
-                content: p,
-                id: p,
-                className: p
+        //clone the session to return to the view
+        session = Object.assign({}, session);
+        //convert date strings to Date objects
+        session.date = new Date(session.date);
+        session.start = new Date(session.start);
+        session.end = new Date(session.end);
+        session.messages = session.messages.map((s, i) => {
+            let mess = {
+                id: i,
+                content: "",
+                title: s.message || "",
+                group: s.player,
+                start: new Date(s.datetime),
+                mentions: s.mentions,
+                className: s.type
             }
-        })
-    ); 
+            mess.end = mess.start.getTime() + mess.title.length * 50;
+            return mess;
+        }); 
+        return new SessionModel(session); 
+    }
 }
 
-function setMessageEndTimes(session) {
-    return session.messages.map((s, i) => {
-        let mess = {
-            id: i,
-            content: "",
-            title: s.message,
-            group: s.player,
-            start: s.datetime
-        }
-        mess.end = new Date(mess.start.getTime() + mess.title.length * 50);
-        return mess;
-    }); 
+class SessionModel {
+    constructor(session) {
+        this.session = session;
+    }
+
+    getPlayers() {
+        return this.session.players;
+    }
+
+    getDuration() {
+        return this.session.end.getTime() - this.session.start.getTime();
+    }
+
+    getMessages() {
+        return this.session.messages;
+    }
 }
 
-function setVisMessages(messages) {
-    return new vis.DataSet(messages);
+class TimelineView extends Observer {
+
+    constructor(api, sessionModel, vis, container) {
+        super();
+        this.api = api;
+        this.session = sessionModel.session;
+        this.container = container;
+        this.vis = vis;
+        this.observers = [];
+        this.colourPalette = [
+            '#3D114Cff',
+            '#3482B8ff',
+            '#265CA4ff',
+            '#BC0F94ff',
+            '#AF3F98ff',
+            '#3E95DAff',
+            '#D98756ff',
+            '#A5155Cff',
+            '#780957ff',
+            '#DB3053ff'
+        ];
+        this.setPalette();
+        
+        
+    }
+    
+    setPalette(colours) {
+        let playerPalette = {};
+        this.session.getPlayers().forEach((p, i) => {
+            playerPalette[p] = this.colourPalette[i];
+        });
+        this.playerPalette = playerPalette; 
+    }
+
+    update(id) {
+        this.timeline.destroy();
+        this.session = this.api.get(id);
+        this.setPalette();
+        this.render();
+    }
+    options() {
+        return {
+            stack: false,
+            maxHeight: 640,
+            horizontalScroll: false,
+            verticalScroll: true,
+            type: 'range',
+            zoomMin: 10000,
+            zoomMax: this.session.getDuration(),
+            zoomFriction: 20,
+            orientation: {
+                axis: "both",
+                item: "top"
+            }
+        };
+    }
+    render() {
+        console.log("rendering viz");
+        const vis = this.vis;
+        let message_data = this.session.getMessages();
+        //set colours of message bars
+        message_data.forEach(m => {
+            console.log(m);
+            if(this.playerPalette[m.group]) {
+                if(m.mentions.length == 0) {
+                    //m.style = `background-color: ${this.playerPalette[m.group]}; border-color: ${this.playerPalette[m.group]}`;
+                } else {
+                    m.style = `background-color: ${this.playerPalette[m.mentions[0]]}; border-color: ${this.playerPalette[m.mentions[0]]}`; 
+                }
+                console.log(m.style);
+            }
+        });
+        const messages = new vis.DataSet(message_data);
+        const groups = new vis.DataSet(this.session.getPlayers().map((p, i) => {
+                return {
+                    content: `<div></div>${p}`,
+                    id: p,
+                    className: p,
+                    style:''
+                }
+            })
+        ); 
+        this.timeline = new vis.Timeline(this.container, messages, groups, this.options());
+        this.attachEvents();
+        this.colourPlayerLabels(this.colourPalette);
+    } 
+    attachEvents() {
+        this.timeline.on('rangechanged', (event) => {
+            this.notifyObservers(this.session.getMessages().filter(m => {
+                return m.start.getTime() >= event.start.getTime() && m.start.getTime() < event.end.getTime(); 
+            }));
+        });
+    }
+    colourPlayerLabels(colours) {
+        const labels = document.querySelectorAll(".vis-label .vis-inner div");
+        Array.prototype.map.call(labels, (l, i) => {
+            l.style.backgroundColor = `${colours[i]}`;
+            l.style.width = '10px'; 
+            l.style.height = '10px'; 
+            l.style.display = 'inline-block';
+            l.style.marginRight = '10px';
+        });
+    }
+    addObserver(observer) {
+        this.observers.push(observer);
+    }
+    notifyObservers(data) {
+        this.observers.forEach(observer => observer.update(data));
+    }
 }
 
-let ids = getSessionIds(sessions);
-let sessionData = restructureSessionData(ids, sessions); 
-sessionData = setLevel(sessionData);
-let session = setSession(sessionData);
-let duration = getDuration(session);
-let players = getPlayers(session);
+class MessagesView {
+    constructor(messages, container) {
+        this.messages = messages;
+        this.container = container;
+    }
+    update(messages) {
+        this.messages = messages;
+        this.render();
+    }
+    render() {
+        let lines = this.messages.map(mess => {
+            return `<li>
+                <span class='playerTime' />
+                <span class='player'>${mess.group}</span>:
+                <span class='time'>
+                    ${new Intl.DateTimeFormat('en-GB', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        dayPeriod: 'narrow',
+                    }).format(mess.start)}
+                </span>
+                </span>
+                <span class='message'>${mess.title}</span>
+                </li>`;
+        });
+        this.container.innerHTML = "<ul class='slackMessages'>" + lines.join('') + "</ul>";
+    }
+}
+
+class SelectorView extends Subject{
+    constructor(sessions, container) {
+        super();
+        this.session_ids = sessions;
+        this.node = document.createElement('select'); 
+        this.container = container;
+    }
+
+    render() {
+        let node = this.node;
+        node.id = 'session_selector';
+        node.className = 'session_selector';
+        node.innerHTML = this.session_ids.map(id => {
+            return `<option value='${id}'>session: ${id}</option>`
+        });
+        node.onchange = e => {
+            this.notifyObservers(e.target.value);
+        };
+        this.container.appendChild(node);
+    }
+}
+
 
 </script>
 </head>
 <body>
-<select id="sessions"></select>
+<div id="container"></div>
 <div id="visualization"></div>
 <div id="messages"></div>
 <script type="text/javascript">
 
-  let sessionSelector = document.getElementById('sessions');
-  let container = document.getElementById('visualization');
+let sessionAPI = new SessionAPI(sessions);
+let sessionModel = new SessionModel(sessionAPI.get());
+let selector = new SelectorView(sessions.map(s => {
+    return s.session_id;
+}), document.getElementById('container'));
+console.log("ppoooooooo");
+console.log(sessionModel);
 
-  let groups = setGroups(players);
-  let m = setMessageEndTimes(session);
-  console.log(m);
-  var messages = setVisMessages(m);
+let timeline = new TimelineView(sessionAPI, sessionModel, vis, document.getElementById('visualization'));
+let messagesView = new MessagesView(sessionModel.getMessages(), document.getElementById('messages'));
 
-  // Configuration for the Timeline
-  var options = {
-    stack: false,
-    maxHeight: 640,
-    horizontalScroll: false,
-    verticalScroll: true,
-    type: 'range',
-    zoomMin: 10000,
-    zoomMax: duration,
-    zoomFriction: 100,
-    orientation: {
-        axis: "both",
-        item: "top"
-    },
-  };
-
-  // Create a Timeline
-  var gTimeline = new vis.Timeline(container, messages, groups, options);
-  gTimeline.on('select', function (properties) {
-    alert('selected items: ' + properties.items);
-  });
-
-  gTimeline.on('rangechanged', (event) => {
-    console.log(event);
-    let range = session.messages.filter(m => {
-        console.log(event.start.getTime());
-        return m.datetime.getTime() >= event.start.getTime() && m.datetime.getTime() < event.end.getTime(); 
-    }); 
-    renderMessages(range);
-    console.log(range);
-  });
-
-  function renderMessages(m) {
-    let container = document.getElementById('messages');
-    let lines = m.map(mess => {
-        return `<div><span class='time'>
-                    ${mess.datetime.getHours()}:${mess.datetime.getMinutes()}:${mess.datetime.getSeconds()}
-                    </span><span class='player'>${mess.player}</player>: <span class='message'>${mess.message}</span></div>`;
-    });
-    container.innerHTML = lines.join('');
-  }
-
-  function populateSelector(sessions) {
-    let sessionSelector = document.getElementById('sessions');
-    let sess = sessions.map(s => {
-        return `<option value='${s.session_id}'>session: ${s.session_id} level: ${s.level}</option>`
-    });
-    sessionSelector.innerHTML = sess.join('');
-    
-    sessionSelector.onchange = e => {
-        console.log(sessions);
-        let session = sessions.filter(r => {
-            return r.session_id == e.target.value;
-        })[0]; 
-        destroyTimeline();
-        createTimeline(session.session_id);  
-    };
-    return sessionSelector;
-  }
-
-  function destroyTimeline() {
-    gTimeline.destroy();
-    document.getElementById('messages').innerHTML = '';
-  }
-
-  function createTimeline(session_id) {
-        console.log(`hello ${session_id}`);
-        let session = setSession(sessionData, session_id);
-        let duration = getDuration(session);
-        let players = getPlayers(session);
-        let groups = setGroups(players);
-        let m = setMessageEndTimes(session);
-            console.log(m);
-        var messages = setVisMessages(m);
-        var timeline = new vis.Timeline(container, messages, groups, options);
-        gTimeline = timeline;
-        timeline.on('select', function (properties) {
-            alert('selected items: ' + properties.items);
-        });
-
-        timeline.on('rangechanged', (event) => {
-            console.log(event);
-            let range = session.messages.filter(m => {
-                console.log(event.start.getTime());
-                return m.datetime.getTime() >= event.start.getTime() && m.datetime.getTime() < event.end.getTime(); 
-            }); 
-            renderMessages(range);
-            console.log(range);
-        });
-  }
-
-  populateSelector(sessionData);
+selector.render();
+selector.addObserver(timeline);
+timeline.render();
+timeline.addObserver(messagesView);
+ 
 </script>
 </body>
 </html>
