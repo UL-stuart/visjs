@@ -170,6 +170,13 @@ class SessionModel {
     }
 
     getPlayers() {
+        //find UptimeLabs
+        const uptimeIndex = this.session.players.indexOf("UptimeLabs");
+        //push uptimelabs to the last player in the list
+        if(uptimeIndex != -1) {
+            this.session.players.push(this.session.players.splice(uptimeIndex, 1)[0]); 
+        } 
+        console.log(this.session.players);
         return this.session.players;
     }
 
