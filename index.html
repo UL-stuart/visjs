@@ -22,9 +22,12 @@ body {
     display:block;
 }
 ul.slackMessages {
+    border: 1px solid #ccc;
     list-style-type: none;
     margin:0;
     padding:0;
+    height: 300px;
+    overflow: scroll;
 }
 .slackMessages .playerTime {
     display:block;
@@ -86,6 +89,18 @@ ul.slackMessages {
     width:10px;
 }
 
+/*ensure scrollbars are visible on the message list*/
+ul::-webkit-scrollbar {
+  -webkit-appearance: none;
+  width: 10px;
+}
+
+ul::-webkit-scrollbar-thumb {
+  border-radius: 5px;
+  background-color: rgba(0,0,0,.5);
+  -webkit-box-shadow: 0 0 1px rgba(255,255,255,.5);
+}
+
 </style>
 <script type="text/javascript" src="session_restructured.js"></script>
 <script type="text/javascript">
@@ -144,7 +159,7 @@ class SessionAPI {
         session.end = new Date(session.end);
         session.messages = session.messages.map((s, i) => {
             let mess = {
-                id: i,
+                id: `message-${i}`,
                 content: "",
                 title: s.message || "",
                 group: s.player,
@@ -266,7 +281,6 @@ class TimelineView extends Observer {
                 } else {
                     m.style = `background-color: ${this.playerPalette[m.mentions[0]]}; border-color: ${this.playerPalette[m.mentions[0]]}`; 
                 }
-                console.log(m.style);
             }
         });
         const messages = new vis.DataSet(message_data);
@@ -289,6 +303,12 @@ class TimelineView extends Observer {
                 return m.start.getTime() >= event.start.getTime() && m.start.getTime() < event.end.getTime(); 
             }));
         });
+        //event to scroll message into view upon selection - refactor this tightly coupled event
+        this.timeline.on('select', e => {
+            const mess = document.getElementById(e.items[0].replace("message", "mess"));
+            console.log(mess);
+            mess.scrollIntoView({ behavior: "smooth" });
+        })
     }
     colourPlayerLabels(colours) {
         const labels = document.querySelectorAll(".vis-label .vis-inner div");
@@ -324,8 +344,8 @@ class MessagesView {
         this.render();
     }
     render() {
-        let lines = this.messages.map(mess => {
-            return `<li>
+        const lines = this.messages.map(mess => {
+            return `<li id='${mess.id.replace("message", "mess")}'>
                 <span class='playerTime' />
                 <span class='player'>${mess.group}</span>:
                 <span class='time'>
